@@ -5,39 +5,85 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import AdaptiveLogSoftmaxWithLoss
 
-from .globalvars import *
-from .char_embd import CharCNN
+from globalvars import *
+from char_embd import CharCNN
+
+import tiktoken
 
 
 class PositionalEmbedding(nn.Module):
 
-    def __init__(self, A, L, D, n_chars, max_chars, PAD_idx):
-        """CharacterBERT-style embeddings
+    # def __init__(self, A, L, D, n_chars, max_chars, PAD_idx):
+    #     """CharacterBERT-style embeddings
+
+    #     Arguments:
+    #     A -- The number of AV products
+    #     L -- Number of tokens per label
+    #     D -- Embedding dimension
+    #     n_chars -- Size of character dataset
+    #     max_chars -- Max number of characters in token
+    #     PAD_idx -- Index of <PAD> in token vocabulary
+    #     """
+
+    #     super(PositionalEmbedding, self).__init__()
+    #     self.token_embd = CharCNN(D, n_chars, max_chars, PAD_idx)
+    #     self.av_embd = nn.Embedding(A+1, D)
+    #     self.pos_embd = nn.Embedding(A*L+1, D)
+    #     self.layer_norm = nn.LayerNorm(D)
+
+    #     positions = torch.arange(A*L+1, dtype=torch.long).reshape(1, -1) # (1, A*L+1)
+    #     avs = torch.arange(A+1, dtype=torch.long) # (A+1)
+    #     avs = avs.repeat(L)[L-1:].reshape(1, -1) # (1, A*L+1)
+    #     self.register_buffer("positions", positions)
+    #     self.register_buffer("avs", avs)
+
+    def __init__(self, A, L, D, vocab_size, PAD_idx, model_name='gpt-4o'):
+        """BPE-style embeddings using tiktoken with a built-in tokenizer
 
         Arguments:
         A -- The number of AV products
         L -- Number of tokens per label
         D -- Embedding dimension
-        n_chars -- Size of character dataset
-        max_chars -- Max number of characters in token
+        vocab_size -- Size of BPE vocabulary
         PAD_idx -- Index of <PAD> in token vocabulary
+        model_name -- BPE tokenizer model (gpt-4o)
         """
-
+        
         super(PositionalEmbedding, self).__init__()
-        self.token_embd = CharCNN(D, n_chars, max_chars, PAD_idx)
-        self.av_embd = nn.Embedding(A+1, D)
-        self.pos_embd = nn.Embedding(A*L+1, D)
+        self.D = D
+        self.PAD_idx = PAD_idx
+
+        # Initialize BPE tokenizer
+        self.tokenizer = tiktoken.get_encoding(model_name)
+
+        self.bpe_embd = nn.Embedding(vocab_size, D)
+        self.av_embd = nn.Embedding(A + 1, D)
+        self.pos_embd = nn.Embedding(A * L + 1, D)
         self.layer_norm = nn.LayerNorm(D)
 
-        positions = torch.arange(A*L+1, dtype=torch.long).reshape(1, -1) # (1, A*L+1)
-        avs = torch.arange(A+1, dtype=torch.long) # (A+1)
-        avs = avs.repeat(L)[L-1:].reshape(1, -1) # (1, A*L+1)
+        positions = torch.arange(A * L + 1, dtype=torch.long).reshape(1, -1)  # (1, A*L+1)
+        avs = torch.arange(A + 1, dtype=torch.long)  # (A+1)
+        avs = avs.repeat(L)[L - 1:].reshape(1, -1)  # (1, A*L+1)
         self.register_buffer("positions", positions)
         self.register_buffer("avs", avs)
 
 
-    def forward(self, X_scan):
+    # def forward(self, X_scan):
 
+    #     # Get batch size
+    #     B = X_scan.shape[0]
+
+    #     # Repeat positions and avs B times
+    #     pos = self.positions.repeat(B, 1)
+    #     avs = self.avs.repeat(B, 1)
+
+    #     # Embed token
+
+    #     token_embd = self.token_embd(X_scan) + self.av_embd(avs) + self.pos_embd(pos)
+    #     token_embd = self.layer_norm(token_embd)
+    #     return token_embd
+
+    def forward(self, X_scan):
         # Get batch size
         B = X_scan.shape[0]
 
@@ -45,10 +91,16 @@ class PositionalEmbedding(nn.Module):
         pos = self.positions.repeat(B, 1)
         avs = self.avs.repeat(B, 1)
 
-        # Embed token
+        # Tokenize the input using the pretrained BPE tokenizer
+        tokenized_inputs = [self.tokenizer.encode(x) for x in X_scan]
 
-        token_embd = self.token_embd(X_scan) + self.av_embd(avs) + self.pos_embd(pos)
+        # Convert to tensor and apply padding
+        input_tensor = nn.utils.rnn.pad_sequence([torch.tensor(seq) for seq in tokenized_inputs], batch_first=True, padding_value=self.PAD_idx)
+
+        # Embed tokens
+        token_embd = self.bpe_embd(input_tensor) + self.av_embd(avs) + self.pos_embd(pos)
         token_embd = self.layer_norm(token_embd)
+
         return token_embd
 
 

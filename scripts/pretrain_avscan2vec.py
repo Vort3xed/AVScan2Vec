@@ -8,15 +8,15 @@ import argparse
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from collections import OrderedDict
-from apex.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, Subset
 
-from avscan2vec.globalvars import *
-from avscan2vec.utils import pretrain_collate_fn
-from avscan2vec.dataset import PretrainDataset
-from avscan2vec import PositionalEmbedding, PretrainEncoder, PretrainLoss
+sys.path.insert(0, "/home/agneya/AVScan2Vec/avscan2vec/")
+from globalvars import *
+from utils import pretrain_collate_fn
+from dataset import PretrainDataset
+from avscan2vec_model import PositionalEmbedding, PretrainEncoder, PretrainLoss
 
 
 def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_file, rank, world_size):
@@ -232,9 +232,12 @@ if __name__ == "__main__":
     pretrain_model = PretrainLoss(A, args.L, args.D, args.H, args.tok_layers,
                                   encoder, dataset)
 
+    """
     # Run model under DDP
     mp.spawn(
         model_parallel,
         args=(args, pretrain_model, train_dataset),
         nprocs=len(args.devices)
     )
+    """
+    print("done")

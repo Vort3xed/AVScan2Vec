@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 
-from .globalvars import *
+from globalvars import *
 
 
 def read_supported_avs(av_path):

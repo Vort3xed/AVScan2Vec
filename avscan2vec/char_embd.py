@@ -5,7 +5,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .globalvars import *
+from globalvars import *
 
 
 class Highway(nn.Module):

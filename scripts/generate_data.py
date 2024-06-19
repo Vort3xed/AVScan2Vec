@@ -7,8 +7,9 @@ import argparse
 from datetime import datetime as dt
 from collections import Counter
 
-from avscan2vec.globalvars import *
-from avscan2vec.utils import read_supported_avs, tokenize_label
+sys.path.insert(0, "/home/agneya/AVScan2Vec/avscan2vec/")
+from globalvars import *
+from utils import read_supported_avs, tokenize_label
 
 
 def get_supported_avs(scan_dir):

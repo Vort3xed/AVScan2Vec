@@ -9,8 +9,8 @@ import numpy as np
 from datetime import datetime as dt
 from torch.utils.data import Dataset
 
-from .globalvars import *
-from .utils import tokenize_label, read_supported_avs
+from globalvars import *
+from utils import tokenize_label, read_supported_avs
 
 
 class AVScanDataset(Dataset):
