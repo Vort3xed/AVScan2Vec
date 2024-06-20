@@ -1,0 +1,14 @@
+[-] Reading supported AVs from ../data_folders/avs.txt
+[-] Identified 89 supported AVs
+Traceback (most recent call last):
+  File "/media/data2/home/agneya/AVScan2Vec/scripts/generate_data.py", line 203, in <module>
+    data = get_data(args.scan_dir, supported_avs)
+  File "/media/data2/home/agneya/AVScan2Vec/scripts/generate_data.py", line 137, in get_data
+    scan_date = dt.fromtimestamp(scan_date).strftime("%Y-%m-%d")
+TypeError: 'str' object cannot be interpreted as an integer
+[-] Reading supported AVs from ../data_folders/avs.txt
+[-] Identified 89 supported AVs
+[-] Wrote supported AVs to ../data_folders/data_SOREL_110000/avs.txt
+[-] Wrote token vocabulary to ../data_folders/data_SOREL_110000/vocab.txt
+[-] Wrote line offsets to ../data_folders/data_SOREL_110000/line_offsets.pkl
+[-] Wrote id dates to ../data_folders/data_SOREL_110000/id_dates.pkl

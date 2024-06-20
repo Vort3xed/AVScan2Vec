@@ -19,7 +19,7 @@ from dataset import PretrainDataset
 from avscan2vec_model import PositionalEmbedding, PretrainEncoder, PretrainLoss
 
 
-def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_file, rank, world_size):
+def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_file):
     """Pre-trains AVScan2Vec."""
 
     # Track model results
@@ -39,12 +39,12 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
 
         # Iterate over each batch
         for X_scan, X_av, Y_scan, Y_idxs, Y_label, Y_av, _, _ in train_loader:
-            X_scan = X_scan.to(rank, non_blocking=True)
-            X_av = X_av.to(rank, non_blocking=True)
-            Y_scan = Y_scan.to(rank, non_blocking=True)
-            Y_idxs = Y_idxs.to(rank, non_blocking=True)
-            Y_label = Y_label.to(rank, non_blocking=True)
-            Y_av = Y_av.to(rank, non_blocking=True)
+            X_scan = X_scan.to("cuda", non_blocking=True)
+            X_av = X_av.to("cuda", non_blocking=True)
+            Y_scan = Y_scan.to("cuda", non_blocking=True)
+            Y_idxs = Y_idxs.to("cuda", non_blocking=True)
+            Y_label = Y_label.to("cuda", non_blocking=True)
+            Y_av = Y_av.to("cuda", non_blocking=True)
 
             # Train model on batch
             optimizer.zero_grad()
@@ -72,11 +72,10 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
             # Print training info every 100 batches
             sys.stdout.flush()
             if batches % 100 == 0:
-                if rank == 0:
-                    fmt_str = "Batches: {}  Total loss: {}\tToken loss: {}\tLabel loss: {}\t Time: {}"
-                    print_loss = print_token_loss + print_label_loss
-                    print(fmt_str.format(batches, print_loss, print_token_loss, print_label_loss, time.time()))
-                    sys.stdout.flush()
+                fmt_str = "Batches: {}  Total loss: {}\tToken loss: {}\tLabel loss: {}\t Time: {}"
+                print_loss = print_token_loss + print_label_loss
+                print(fmt_str.format(batches, print_loss, print_token_loss, print_label_loss, time.time()))
+                sys.stdout.flush()
                 print_token_loss = 0.0
                 print_label_loss = 0.0
 
@@ -94,13 +93,12 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
                     print("Saved model to {}".format(checkpoint_file_part))
 
         # Save model statistics at end of epoch
-        if rank == 0:
-            torch.save({
-                "model_state_dict": model.module.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "scheduler_state_dict": scheduler.state_dict(),
-            }, checkpoint_file)
-            print("Saved model to {}".format(checkpoint_file))
+        torch.save({
+            "model_state_dict": model.module.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+        }, checkpoint_file)
+        print("Saved model to {}".format(checkpoint_file))
 
     return
 
@@ -113,7 +111,7 @@ def model_parallel(rank, cmd_args, pretrain_model, train_dataset):
     os.environ["MASTER_PORT"] = "12355"
     world_size = len(cmd_args.devices)
     torch.cuda.set_device(rank)
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    #dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
     # Get distributed sampler for train dataset
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size,
@@ -194,6 +192,8 @@ if __name__ == "__main__":
     parser.add_argument("--tok-layers", default=4, type=int,
                         help="Number of layers in the token encoder")
     args = parser.parse_args()
+
+    # Commandline arguments
     print("Pre-training AVScan2Vec with args: {}".format(args))
     sys.stdout.flush()
 
@@ -241,3 +241,47 @@ if __name__ == "__main__":
     )
     """
     print("done")
+
+    train_loader = DataLoader(train_dataset, batch_size=cmd_args.batch_size,
+                              shuffle=True, pin_memory=True,
+                              num_workers=cmd_args.num_workers,
+                              collate_fn=pretrain_collate_fn)
+
+    # Load model from checkpoint, if checkpoint file exists
+    save_info = None
+    if os.path.isfile(cmd_args.checkpoint_file):
+        print("Loading model from {}".format(cmd_args.checkpoint_file))
+        sys.stdout.flush()
+        save_info = torch.load(cmd_args.checkpoint_file, map_location="cpu")
+        """
+        state_dict = OrderedDict()
+        for k, v in save_info["model_state_dict"].items():
+            new_k = re.sub(r"module.", "", k)
+            state_dict[new_k] = v
+        """
+        pretrain_model.load_state_dict(state_dict)
+
+    # Move model to GPU
+    pretrain_model = pretrain_model.to("cuda")
+
+    # Define optimizer and scheduler
+    optimizer = torch.optim.AdamW(pretrain_model.parameters(), lr=0.00025)
+    num_schedule = cmd_args.batch_size
+    scheduler = CosineAnnealingWarmRestarts(optimizer, len(train_dataset) // num_schedule + 1)
+
+    # Load optimizer and scheduler if loading from checkpoint
+    if save_info is not None:
+        optimizer.load_state_dict(save_info["optimizer_state_dict"])
+        scheduler.load_state_dict(save_info["scheduler_state_dict"])
+
+    # Train model
+    train_args = {
+        "model": pretrain_model,
+        "optimizer": optimizer,
+        "scheduler": scheduler,
+        "train_loader": train_loader,
+        "epochs": cmd_args.num_epochs,
+        "checkpoint_file": cmd_args.checkpoint_file,
+    }
+    train_network(**train_args)
+    print("Done!")

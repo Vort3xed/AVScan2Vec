@@ -6,8 +6,6 @@ import torch.nn.functional as F
 from torch.nn import AdaptiveLogSoftmaxWithLoss
 
 from globalvars import *
-from char_embd import CharCNN
-
 import tiktoken
 
 
@@ -37,7 +35,7 @@ class PositionalEmbedding(nn.Module):
     #     self.register_buffer("positions", positions)
     #     self.register_buffer("avs", avs)
 
-    def __init__(self, A, L, D, vocab_size, PAD_idx, model_name='gpt-4o'):
+    def __init__(self, A, L, D, vocab_size, PAD_idx, model_name=None):
         """BPE-style embeddings using tiktoken with a built-in tokenizer
 
         Arguments:
@@ -46,7 +44,7 @@ class PositionalEmbedding(nn.Module):
         D -- Embedding dimension
         vocab_size -- Size of BPE vocabulary
         PAD_idx -- Index of <PAD> in token vocabulary
-        model_name -- BPE tokenizer model (gpt-4o)
+        model_name -- BPE tokenizer model (o200k_base)
         """
         
         super(PositionalEmbedding, self).__init__()
@@ -54,7 +52,7 @@ class PositionalEmbedding(nn.Module):
         self.PAD_idx = PAD_idx
 
         # Initialize BPE tokenizer
-        self.tokenizer = tiktoken.get_encoding(model_name)
+        self.tokenizer = tiktoken.get_encoding("o200k_base")
 
         self.bpe_embd = nn.Embedding(vocab_size, D)
         self.av_embd = nn.Embedding(A + 1, D)
@@ -91,8 +89,13 @@ class PositionalEmbedding(nn.Module):
         pos = self.positions.repeat(B, 1)
         avs = self.avs.repeat(B, 1)
 
+        print(X_scan.shape)
+        print(X_scan[0]) # x
+
         # Tokenize the input using the pretrained BPE tokenizer
         tokenized_inputs = [self.tokenizer.encode(x) for x in X_scan]
+
+        print(tokenized_inputs[0])
 
         # Convert to tensor and apply padding
         input_tensor = nn.utils.rnn.pad_sequence([torch.tensor(seq) for seq in tokenized_inputs], batch_first=True, padding_value=self.PAD_idx)

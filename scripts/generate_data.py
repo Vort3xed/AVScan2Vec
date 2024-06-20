@@ -55,6 +55,7 @@ def get_supported_avs(scan_dir):
                 # Update AV counts with normalized AV names
                 av_counts.update(avs)
                 total_reports += 1
+                print("here!")
 
     # Support AVs which appear in at least 10% of scan reports
     supported_avs = set()
@@ -102,6 +103,7 @@ def get_data(scan_dir, supported_avs):
                     continue
                 if not isinstance(report, dict):
                     continue
+                """
                 if report.get("data") is None:
                     continue
                 report = report["data"]
@@ -114,13 +116,24 @@ def get_data(scan_dir, supported_avs):
                     continue
                 if report.get("last_analysis_date") is None:
                     continue
+                """
+                if report.get("scans") is None:
+                    continue
+                if report.get("md5") is None:
+                    continue
+                if report.get("scan_date") is None:
+                    continue
 
                 # Read scan information
                 # Reports with no scan date or first seen have None values
+                """
                 av_results = report["last_analysis_results"]
                 md5 = report["md5"]
                 scan_date = report["last_analysis_date"]
-                scan_date = dt.fromtimestamp(scan_date).strftime("%Y-%m-%d")
+                """
+                av_results = report["scans"]
+                md5 = report["md5"]
+                scan_date = report["scan_date"][:7]
 
                 # Process labels from supported AVs
                 num_detections = 0
@@ -149,6 +162,9 @@ def get_data(scan_dir, supported_avs):
                 line_offsets[file_path].append(offset)
                 id_dates.append((_id, scan_date))
                 _id += 1
+                if _id % 1000 == 0:
+                    print(_id)
+                    sys.stdout.flush()
 
     # Add special tokens
     token_vocab = [PAD, UNK, EOS, ABS, BEN]
@@ -184,6 +200,7 @@ if __name__ == "__main__":
         print("[-] Reading supported AVs from {}".format(args.av_path))
         supported_avs = read_supported_avs(args.av_path)
     print("[-] Identified {} supported AVs".format(len(supported_avs)))
+    sys.stdout.flush()
 
     # Parse scan reports
     data = get_data(args.scan_dir, supported_avs)
