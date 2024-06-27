@@ -18,7 +18,7 @@ from utils import pretrain_collate_fn
 from dataset import PretrainDataset
 from avscan2vec_model import PositionalEmbedding, PretrainEncoder, PretrainLoss
 
-
+# REMOVE EPOCH SETTING
 def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_file):
     """Pre-trains AVScan2Vec."""
 
@@ -28,7 +28,7 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
 
     # Iterate over each epoch
     for epoch in range(epochs):
-        train_loader.sampler.set_epoch(epoch)
+        # train_loader.sampler.set_epoch(epoch)
         model = model.train()
         print_token_loss = 0.0
         print_label_loss = 0.0
@@ -102,68 +102,69 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
 
     return
 
+# NEVER CALLING MODEL PARALLELIZATION
 
-def model_parallel(rank, cmd_args, pretrain_model, train_dataset):
-    """Enable AVScan2Vec to be pre-trained under Distributed Data Parallel."""
+# def model_parallel(rank, cmd_args, pretrain_model, train_dataset):
+#     """Enable AVScan2Vec to be pre-trained under Distributed Data Parallel."""
 
-    # Set up DDP environment
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    world_size = len(cmd_args.devices)
-    torch.cuda.set_device(rank)
-    #dist.init_process_group("nccl", rank=rank, world_size=world_size)
+#     # Set up DDP environment
+#     os.environ["MASTER_ADDR"] = "localhost"
+#     os.environ["MASTER_PORT"] = "12355"
+#     world_size = len(cmd_args.devices)
+#     torch.cuda.set_device(rank)
+#     #dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
-    # Get distributed sampler for train dataset
-    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size,
-                                       rank=rank, shuffle=True, drop_last=True)
+#     # Get distributed sampler for train dataset
+#     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size,
+#                                        rank=rank, shuffle=True, drop_last=True)
 
-    # Get train loader
-    train_loader = DataLoader(train_dataset, batch_size=cmd_args.batch_size,
-                              shuffle=False, pin_memory=True,
-                              num_workers=cmd_args.num_workers,
-                              collate_fn=pretrain_collate_fn,
-                              sampler=train_sampler)
+#     # Get train loader
+#     train_loader = DataLoader(train_dataset, batch_size=cmd_args.batch_size,
+#                               shuffle=False, pin_memory=True,
+#                               num_workers=cmd_args.num_workers,
+#                               collate_fn=pretrain_collate_fn,
+#                               sampler=train_sampler)
 
-    # Load model from checkpoint, if checkpoint file exists
-    save_info = None
-    if os.path.isfile(cmd_args.checkpoint_file):
-        save_info = torch.load(cmd_args.checkpoint_file, map_location="cpu")
-        state_dict = OrderedDict()
-        for k, v in save_info["model_state_dict"].items():
-            new_k = re.sub(r"module.", "", k)
-            state_dict[new_k] = v
-        pretrain_model.load_state_dict(state_dict)
+#     # Load model from checkpoint, if checkpoint file exists
+#     save_info = None
+#     if os.path.isfile(cmd_args.checkpoint_file):
+#         save_info = torch.load(cmd_args.checkpoint_file, map_location="cpu")
+#         state_dict = OrderedDict()
+#         for k, v in save_info["model_state_dict"].items():
+#             new_k = re.sub(r"module.", "", k)
+#             state_dict[new_k] = v
+#         pretrain_model.load_state_dict(state_dict)
 
-    # Move model to GPU
-    pretrain_model = pretrain_model.to(rank)
-    pretrain_model = DDP(pretrain_model, delay_allreduce=True)
+#     # Move model to GPU
+#     pretrain_model = pretrain_model.to(rank)
+#     pretrain_model = DDP(pretrain_model, delay_allreduce=True)
 
-    # Define optimizer and scheduler
-    optimizer = torch.optim.AdamW(pretrain_model.parameters(), lr=0.00025)
-    num_schedule = cmd_args.batch_size * world_size
-    scheduler = CosineAnnealingWarmRestarts(optimizer, len(train_dataset) // num_schedule + 1)
+#     # Define optimizer and scheduler
+#     optimizer = torch.optim.AdamW(pretrain_model.parameters(), lr=0.00025)
+#     num_schedule = cmd_args.batch_size * world_size
+#     scheduler = CosineAnnealingWarmRestarts(optimizer, len(train_dataset) // num_schedule + 1)
 
-    # Load optimizer and scheduler if loading from checkpoint
-    if save_info is not None:
-        optimizer.load_state_dict(save_info["optimizer_state_dict"])
-        scheduler.load_state_dict(save_info["scheduler_state_dict"])
+#     # Load optimizer and scheduler if loading from checkpoint
+#     if save_info is not None:
+#         optimizer.load_state_dict(save_info["optimizer_state_dict"])
+#         scheduler.load_state_dict(save_info["scheduler_state_dict"])
 
-    # Train model
-    train_args = {
-        "model": pretrain_model,
-        "optimizer": optimizer,
-        "scheduler": scheduler,
-        "train_loader": train_loader,
-        "epochs": cmd_args.num_epochs,
-        "checkpoint_file": cmd_args.checkpoint_file,
-        "rank": rank,
-        "world_size": world_size
-    }
-    train_network(**train_args)
+#     # Train model
+#     train_args = {
+#         "model": pretrain_model,
+#         "optimizer": optimizer,
+#         "scheduler": scheduler,
+#         "train_loader": train_loader,
+#         "epochs": cmd_args.num_epochs,
+#         "checkpoint_file": cmd_args.checkpoint_file,
+#         "rank": rank,
+#         "world_size": world_size
+#     }
+#     train_network(**train_args)
 
-    # Clean up from DDP
-    dist.destroy_process_group()
-    return
+#     # Clean up from DDP
+#     dist.destroy_process_group()
+#     return
 
 
 if __name__ == "__main__":
@@ -242,17 +243,17 @@ if __name__ == "__main__":
     """
     print("done")
 
-    train_loader = DataLoader(train_dataset, batch_size=cmd_args.batch_size,
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, pin_memory=True,
-                              num_workers=cmd_args.num_workers,
+                              num_workers=args.num_workers,
                               collate_fn=pretrain_collate_fn)
 
     # Load model from checkpoint, if checkpoint file exists
     save_info = None
-    if os.path.isfile(cmd_args.checkpoint_file):
-        print("Loading model from {}".format(cmd_args.checkpoint_file))
+    if os.path.isfile(args.checkpoint_file):
+        print("Loading model from {}".format(args.checkpoint_file))
         sys.stdout.flush()
-        save_info = torch.load(cmd_args.checkpoint_file, map_location="cpu")
+        save_info = torch.load(args.checkpoint_file, map_location="cuda")
         """
         state_dict = OrderedDict()
         for k, v in save_info["model_state_dict"].items():
@@ -266,7 +267,7 @@ if __name__ == "__main__":
 
     # Define optimizer and scheduler
     optimizer = torch.optim.AdamW(pretrain_model.parameters(), lr=0.00025)
-    num_schedule = cmd_args.batch_size
+    num_schedule = args.batch_size
     scheduler = CosineAnnealingWarmRestarts(optimizer, len(train_dataset) // num_schedule + 1)
 
     # Load optimizer and scheduler if loading from checkpoint
@@ -280,8 +281,8 @@ if __name__ == "__main__":
         "optimizer": optimizer,
         "scheduler": scheduler,
         "train_loader": train_loader,
-        "epochs": cmd_args.num_epochs,
-        "checkpoint_file": cmd_args.checkpoint_file,
+        "epochs": args.num_epochs,
+        "checkpoint_file": args.checkpoint_file,
     }
     train_network(**train_args)
     print("Done!")
