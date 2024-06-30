@@ -77,6 +77,54 @@ class AVScanDataset(Dataset):
         self.num_reports = sum([len(v) for v in self.line_offsets.values()])
 
 
+    # def parse_scan_report(self, idx):
+
+    #     # Find the file path that contains the target scan report
+    #     line_path = None
+    #     for file_path in self.line_paths:
+    #         if idx - len(self.line_offsets[file_path]) < 0:
+    #             line_path = file_path
+    #             break
+    #         idx -= len(self.line_offsets[file_path])
+
+    #     # Seek to first byte of that scan report in file path
+    #     start_byte = self.line_offsets[line_path][idx]
+
+    #     # Read report from file
+    #     with open(file_path, "r") as f:
+    #         with mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ) as f_mmap:
+    #             f_mmap.seek(start_byte)
+    #             line = f_mmap.readline()
+    #             report = json.loads(line)["data"]["attributes"]
+    #     md5 = report["md5"]
+    #     sha1 = report["sha1"]
+    #     sha256 = report["sha256"]
+    #     scan_date = report["last_analysis_date"]
+    #     scan_date = dt.fromtimestamp(scan_date).strftime("%Y-%m-%d")
+
+    #     # Parse AVs and tokens from scan report
+    #     av_tokens = {}
+        
+    #     for av in report["last_analysis_results"].keys():
+
+    #         # Normalize name of AV
+    #         scan_info = report["last_analysis_results"][av]
+    #         av = AV_NORM.sub("", av).lower().strip()
+
+    #         # Skip AVs that aren't supported
+    #         if av not in self.supported_avs:
+    #             continue
+
+    #         # Use <BEN> special token for AVs that detected file as benign
+    #         if scan_info.get("result") is None:
+    #             tokens = [BEN]
+    #         else:
+    #             label = scan_info["result"]
+    #             tokens = tokenize_label(label)[:self.max_tokens-2]
+    #         av_tokens[av] = tokens
+
+    #     return av_tokens, md5, sha1, sha256, scan_date
+
     def parse_scan_report(self, idx):
 
         # Find the file path that contains the target scan report
@@ -95,20 +143,23 @@ class AVScanDataset(Dataset):
             with mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ) as f_mmap:
                 f_mmap.seek(start_byte)
                 line = f_mmap.readline()
-                report = json.loads(line)["data"]["attributes"]
+                report = json.loads(line)
         md5 = report["md5"]
         sha1 = report["sha1"]
         sha256 = report["sha256"]
-        scan_date = report["last_analysis_date"]
-        scan_date = dt.fromtimestamp(scan_date).strftime("%Y-%m-%d")
+        scan_date = report["scan_date"]
+        # scan_date = dt.fromtimestamp(scan_date).strftime("%Y-%m-%d")
+
+        scan_date = dt.strptime(scan_date, "%Y-%m-%d %H:%M:%S")
+        scan_date = scan_date.strftime("%Y-%m-%d")
 
         # Parse AVs and tokens from scan report
         av_tokens = {}
         
-        for av in report["last_analysis_results"].keys():
+        for av in report["scans"].keys():
 
             # Normalize name of AV
-            scan_info = report["last_analysis_results"][av]
+            scan_info = report["scans"][av]
             av = AV_NORM.sub("", av).lower().strip()
 
             # Skip AVs that aren't supported
