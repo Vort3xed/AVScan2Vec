@@ -7,31 +7,71 @@ from torch.nn import AdaptiveLogSoftmaxWithLoss
 
 # remove, this is old characterbert implementation
 from char_embed import CharCNN
+from bpe_embed import BPEEmbedding
+
+# from bpe_test import BPEEmbedding
 
 from globalvars import *
 import tiktoken
+import sys
 
 
 class PositionalEmbedding(nn.Module):
 
     # Original CharacterBERT
-    def __init__(self, A, L, D, n_chars, max_chars, PAD_idx):
-        """CharacterBERT-style embeddings
+    # def __init__(self, A, L, D, n_chars, max_chars, PAD_idx):
+    #     """CharacterBERT-style embeddings
+
+    #     Arguments:
+    #     A -- The number of AV products
+    #     L -- Number of tokens per label
+    #     D -- Embedding dimension
+    #     n_chars -- Size of character dataset
+    #     max_chars -- Max number of characters in token
+    #     PAD_idx -- Index of <PAD> in token vocabulary
+    #     """
+
+    #     super(PositionalEmbedding, self).__init__()
+    #     self.token_embd = CharCNN(D, n_chars, max_chars, PAD_idx)
+    #     self.av_embd = nn.Embedding(A+1, D)
+    #     self.pos_embd = nn.Embedding(A*L+1, D)
+    #     self.layer_norm = nn.LayerNorm(D)
+
+    #     positions = torch.arange(A*L+1, dtype=torch.long).reshape(1, -1) # (1, A*L+1)
+    #     avs = torch.arange(A+1, dtype=torch.long) # (A+1)
+    #     avs = avs.repeat(L)[L-1:].reshape(1, -1) # (1, A*L+1)
+    #     self.register_buffer("positions", positions)
+    #     self.register_buffer("avs", avs)
+
+    #BPE implementation with BPE class
+    # <CHANGE>
+    def __init__(self, A, L, D, vocab_size, max_chars, PAD_idx):
+        """BPE-style embeddings
 
         Arguments:
         A -- The number of AV products
         L -- Number of tokens per label
         D -- Embedding dimension
-        n_chars -- Size of character dataset
+        vocab_size -- Size of BPE vocabulary
         max_chars -- Max number of characters in token
         PAD_idx -- Index of <PAD> in token vocabulary
         """
 
+        # A: 89, L: 7, D: 768, vocab_size: 200000, PAD_idx: 0
+
+        # super(PositionalEmbedding, self).__init__()
+        # self.token_embd = BPEEmbedding(D, vocab_size, PAD_idx)
+        # self.av_embd = nn.Embedding(A+1, D)
+        # self.pos_embd = nn.Embedding(A*L+1, D)
+        # self.layer_norm = nn.LayerNorm(D)
+        # self.tokenizer = tiktoken.get_encoding("o200k_base")
+
         super(PositionalEmbedding, self).__init__()
-        self.token_embd = CharCNN(D, n_chars, max_chars, PAD_idx)
+        self.token_embd = nn.Embedding(A+1, D)
         self.av_embd = nn.Embedding(A+1, D)
         self.pos_embd = nn.Embedding(A*L+1, D)
         self.layer_norm = nn.LayerNorm(D)
+        self.tokenizer = tiktoken.get_encoding("o200k_base")
 
         positions = torch.arange(A*L+1, dtype=torch.long).reshape(1, -1) # (1, A*L+1)
         avs = torch.arange(A+1, dtype=torch.long) # (A+1)
@@ -70,46 +110,81 @@ class PositionalEmbedding(nn.Module):
     #     self.register_buffer("positions", positions)
     #     self.register_buffer("avs", avs)
 
-    #CharacterBERT forward function for model
+    # CharacterBERT forward function for model ALSO WORKS FOR BPE
     def forward(self, X_scan):
 
         # Get batch size
         B = X_scan.shape[0]
 
+        print(X_scan.size()) # (B, A*L+1, max_chars)
+        print(self.positions.size()) # (1, A*L+1)
+        print(self.avs.size()) # (1, A*L+1)
+
         # Repeat positions and avs B times
         pos = self.positions.repeat(B, 1)
         avs = self.avs.repeat(B, 1)
 
-        # Embed token
+        print(X_scan.size()) # (B, A*L+1, max_chars)
+        print(pos.size()) # (B, A*L+1)
+        print(avs.size()) # (B, A*L+1)
 
-        token_embd = self.token_embd(X_scan) + self.av_embd(avs) + self.pos_embd(pos)
+        # X_scan_embd = self.token_embd(X_scan.view(-1, 20)) # (B * A, L, D)
+        X_scan_embd = self.token_embd(X_scan.view(-1, 624)) 
+
+        # X_scan_embd = self.token_embd(X_scan) 
+        av_embd = self.av_embd(avs).repeat(20,1,1)
+        pos_embd = self.pos_embd(pos).repeat(20,1,1)
+
+        # Embed token
+        print(f"X_scan size: {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
+        print(f"avs size: {av_embd.size()}") # (B, A*L+1, D)
+        print(f"pos size: {pos_embd.size()}") # (B, A*L+1, D)
+
+        token_embd = X_scan_embd + av_embd + pos_embd
         token_embd = self.layer_norm(token_embd)
         return token_embd
 
-    #BPE forward function implementation
+    # basic bpe implementaion?
     # def forward(self, X_scan):
+
     #     # Get batch size
     #     B = X_scan.shape[0]
+
+    #     print(self.positions.size())
+    #     print(self.avs.size())
 
     #     # Repeat positions and avs B times
     #     pos = self.positions.repeat(B, 1)
     #     avs = self.avs.repeat(B, 1)
 
-    #     print(X_scan.shape)
-    #     print(X_scan[0]) # x
+    #     print(pos.size())
+    #     print(avs.size())
 
-    #     # Tokenize the input using the pretrained BPE tokenizer
-    #     tokenized_inputs = [self.tokenizer.encode(x) for x in X_scan]
+    #     # pos = pos.repeat(1, 1, 20)
+    #     # avs = avs.repeat(1, 1, 20)
 
-    #     print(tokenized_inputs[0])
+    #     # print(pos.size())
+    #     # print(avs.size())
 
-    #     # Convert to tensor and apply padding
-    #     input_tensor = nn.utils.rnn.pad_sequence([torch.tensor(seq) for seq in tokenized_inputs], batch_first=True, padding_value=self.PAD_idx)
+    #     # bpe_embd = self.bpe_embd(X_scan).view(100, 624, -1)
+    #     bpe_embd = self.bpe_embd(X_scan).sum(dim=2)
+    #     av_embd = self.av_embd(avs)
+    #     pos_embd = self.pos_embd(pos)
 
-    #     # Embed tokens
-    #     token_embd = self.bpe_embd(input_tensor) + self.av_embd(avs) + self.pos_embd(pos)
+    #     # av_embd = av_embd.repeat(1,1,20)
+    #     # pos_embd = pos_embd.repeat(1,1,20)
+
+    #     print(f"BPE embedding size: {bpe_embd.size()}")
+    #     print(f"antivirus embedding size: {av_embd.size()}")
+    #     print(f"positional embedding size: {pos_embd.size()}")
+
+        
+    #     # Embed token
+    #     token_embd = bpe_embd + av_embd + pos_embd
     #     token_embd = self.layer_norm(token_embd)
 
+    #     # token_embd = torch.cat((bpe_embd, av_embd, pos_embd), dim=-1)
+        
     #     return token_embd
 
 
@@ -135,6 +210,8 @@ class PretrainEncoder(nn.Module):
         self.H = H
         self.tok_layers = tok_layers
         self.PAD_idx = PAD_idx
+
+        # PositionalEmbedding object
         self.token_embd = token_embd
 
         # Define token transformer encoder
@@ -161,6 +238,7 @@ class PretrainEncoder(nn.Module):
             token_mask = (X_scan[:, :, 1] == self.PAD_idx) # (B, A*L+1)
 
         # Apply positional and segment embeddings
+        # pass X_scan into the PositionalEmbedding model and get the embeddings
         X_scan_embd = self.token_embd(X_scan) # (B, A*L+1, D)
 
         # Encode X_scan using token encoder
@@ -207,6 +285,9 @@ class PretrainLoss(nn.Module):
         self.register_buffer("c_init", _c_init) # (tok_layers, 1, D)
 
         # <SOS> token to use as initial decoder input
+        print(torch.cat([self.dataset.tok_to_tensor(tok) for tok in dataset.SOS_toks]).size())
+        sys.stdout.flush()
+        
         _X_SOS = torch.cat([self.dataset.tok_to_tensor(tok) for tok in dataset.SOS_toks]).reshape(A, -1) # (A, max_chars)        
         self.register_buffer("X_SOS", _X_SOS) # (A, max_chars)
 
@@ -296,7 +377,15 @@ class PretrainLoss(nn.Module):
             X_decoder = X_decoder + self.encoder.token_embd.av_embd(Y_av+1)
             X_decoder = X_decoder + self.encoder.token_embd.pos_embd(Y_pos+1)
             X_decoder = self.encoder.token_embd.layer_norm(X_decoder)
+
+            # added sum here (remove)
+            # i have no clue what im doing THIS IS DEFINITELY WRONG. this is just some random crap i did to force x_decoder to be the right shape
+            # X_decoder = X_decoder.sum(2)[:, 0:1, :]
+
+            # print(f"X_decoder size: {X_decoder.size()}")
+
             X_decoder = X_decoder.reshape(B, 1, self.D) # (B, 1, D)
+            
 
         # Determine whether to use teacher forcing (50% when training)
         teacher_forcing = False
@@ -311,6 +400,9 @@ class PretrainLoss(nn.Module):
 
             # Get output for decoder at current timestep
             decoder_out, (h_decoder, c_decoder) = self.decoder(X_decoder, (h_decoder, c_decoder))
+            # print(f"decoder_out size: {decoder_out.size()}")
+            # i have no clue what im doing THIS IS DEFINITELY WRONG. this is just some random crap i did to force x_decoder to be the right shape
+            # decoder_out = decoder_out[:, 0:1, :].reshape(B, self.D)
             decoder_out = decoder_out.reshape(B, self.D)
 
             # Predict token to use as decoder's next input
