@@ -184,7 +184,7 @@ if __name__ == "__main__":
                         help="Devices to use")
     parser.add_argument("--num-workers", default=4, type=int,
                         help="Number of subprocesses per DataLoader")
-    parser.add_argument("-L", default=7, type=int,
+    parser.add_argument("-L", default=35, type=int,
                         help="The maximum number of tokens in an AV label")
     parser.add_argument("-D", default=768, type=int,
                         help="AVScan2Vec vector dimension")
@@ -203,6 +203,9 @@ if __name__ == "__main__":
 
     # Initialize dataset
     dataset = PretrainDataset(args.data_dir, args.L)
+    # print(dataset[0])
+    # dataset[0]
+    # exit(0)
 
     # Get sizes of train / test set
     n_train = int(len(dataset) * 0.9)
@@ -226,6 +229,8 @@ if __name__ == "__main__":
     n_chars = len(dataset.alphabet)
     max_chars = dataset.max_chars
     PAD_idx = dataset.alphabet_rev[PAD]
+    
+    # n_chars is the vocab size
     token_embd = PositionalEmbedding(A, args.L, args.D, n_chars, max_chars,
                                      PAD_idx)
     encoder = PretrainEncoder(A, args.L, args.D, args.H, args.tok_layers,

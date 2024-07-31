@@ -23,6 +23,7 @@ def get_supported_avs(scan_dir):
 
     av_counts = Counter()
     total_reports = 0
+    print(scan_dir)
     for file_name in os.listdir(scan_dir):
         file_path = os.path.join(scan_dir, file_name)
         with open(file_path, "rb") as f:
@@ -35,23 +36,25 @@ def get_supported_avs(scan_dir):
                     continue
 
                 # Check that contents of scan report is valid
-                if not len(report):
-                    continue
-                if not isinstance(report, dict):
-                    continue
-                if report.get("data") is None:
-                    continue
-                report = report["data"]
-                if report.get("attributes") is None:
-                    continue
-                report = report["attributes"]
-                if report.get("last_analysis_results") is None:
-                    continue
+                # if not len(report):
+                #     continue
+                # if not isinstance(report, dict):
+                #     continue
+                # if report.get("data") is None:
+                #     continue
+                # report = report["data"]
+                # if report.get("attributes") is None:
+                #     continue
+                # report = report["attributes"]
+                # if report.get("last_analysis_results") is None:
+                #     continue
 
                 # Normalize AV names
+                # avs = [re.sub(r"\W+", "", av).lower().strip()
+                #        for av in report["last_analysis_results"].keys()]
                 avs = [re.sub(r"\W+", "", av).lower().strip()
-                       for av in report["last_analysis_results"].keys()]
-
+                       for av in report["scans"].keys()]
+                
                 # Update AV counts with normalized AV names
                 av_counts.update(avs)
                 total_reports += 1
