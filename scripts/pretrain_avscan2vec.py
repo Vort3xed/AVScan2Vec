@@ -185,6 +185,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", default=4, type=int,
                         help="Number of subprocesses per DataLoader")
     parser.add_argument("-L", default=35, type=int,
+    parser.add_argument("-L", default=35, type=int,
                         help="The maximum number of tokens in an AV label")
     parser.add_argument("-D", default=768, type=int,
                         help="AVScan2Vec vector dimension")
@@ -203,6 +204,9 @@ if __name__ == "__main__":
 
     # Initialize dataset
     dataset = PretrainDataset(args.data_dir, args.L)
+    # print(dataset[0])
+    # dataset[0]
+    # exit(0)
     # print(dataset[0])
     # dataset[0]
     # exit(0)
