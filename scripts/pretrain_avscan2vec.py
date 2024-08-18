@@ -185,7 +185,6 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", default=4, type=int,
                         help="Number of subprocesses per DataLoader")
     parser.add_argument("-L", default=35, type=int,
-    parser.add_argument("-L", default=35, type=int,
                         help="The maximum number of tokens in an AV label")
     parser.add_argument("-D", default=768, type=int,
                         help="AVScan2Vec vector dimension")
@@ -233,7 +232,9 @@ if __name__ == "__main__":
     n_chars = len(dataset.alphabet)
     max_chars = dataset.max_chars
     PAD_idx = dataset.alphabet_rev[PAD]
-    NO_AV_idx = dataset.alphabet_rev[NO_AV]
+    # NO_AV_idx = dataset.av_vocab_rev[NO_AV]
+    NO_AV_idx = 0
+    print("NO_AV_idx: ", NO_AV_idx)
     
     # n_chars is the vocab size
     token_embd = PositionalEmbedding(A, args.L, args.D, n_chars, max_chars,

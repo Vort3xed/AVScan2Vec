@@ -17,9 +17,6 @@ from utils import tokenize_label, read_supported_avs
 
 class AVScanDataset(Dataset):
 
-
-    def __init__(self, data_dir, max_tokens=20, max_chars=10, max_vocab=10000000):
-
     def __init__(self, data_dir, max_tokens=20, max_chars=10, max_vocab=10000000):
         """Base dataset class for AVScan2Vec.
 
@@ -547,8 +544,8 @@ class PretrainDataset(AVScanDataset):
         Y_label = ["<SOS_{}>".format(Y_av)] + av_tokens[Y_av] + [EOS]
         Y_label = [self.tok_to_tensor(tok) for tok in Y_label]
         Y_label += [self.tok_to_tensor(PAD)]*(self.max_tokens-self.true_length(Y_label))
-        Y_label = [self.tok_to_tensor(tok) for tok in Y_label]
-        Y_label += [self.tok_to_tensor(PAD)]*(self.max_tokens-self.true_length(Y_label))
+        # Y_label = [self.tok_to_tensor(tok) for tok in Y_label]
+        # Y_label += [self.tok_to_tensor(PAD)]*(self.max_tokens-self.true_length(Y_label))
         av_tokens[Y_av] = None
 
         # Randomly select 5% of tokens to be replaced with MASK
@@ -596,13 +593,12 @@ class PretrainDataset(AVScanDataset):
 
         # Construct X_scan from scan report
         for i,av in enumerate(self.avs):
-        for i,av in enumerate(self.avs):
             if av_tokens.get(av) is None:
                 Xi = ["<SOS_{}>".format(av), ABS, EOS]
             else:
                 Xi = ["<SOS_{}>".format(av)] + av_tokens[av] + [EOS]
             # [torch([1, 3]), torch([4, 6, 85]), torch([7])]
-            Xi = [self.tok_to_tensor(tok) for tok in Xi]
+            # Xi = [self.tok_to_tensor(tok) for tok in Xi]
             if rand_nums[i] < 5:
                 token_idxs = [i+1 for i in range(len(Xi) - 1)]
                 # abstain and benign can be added here
@@ -620,7 +616,7 @@ class PretrainDataset(AVScanDataset):
             
             # print(character_length_xi)
             # print("amt of padding added:", self.max_tokens-character_length_xi)
-            Xi += [self.tok_to_tensor(PAD)]*(self.max_tokens-self.true_length(Xi))
+            # Xi += [self.tok_to_tensor(PAD)]*(self.max_tokens-self.true_length(Xi))
             # print(Xi)
 
             # print("xi length:", self.true_length(Xi))
@@ -660,7 +656,7 @@ class PretrainDataset(AVScanDataset):
         # Construct X_av from list of AVs in report
         X_av = [av if av_tokens.get(av) is not None else NO_AV for av in self.avs]
 
-        X_scan = self.squish(X_scan)
+        # X_scan = self.squish(X_scan)
 
         # Y_scan holds out BPE BITS, not tokens!
         X_scan = self.squish(X_scan)

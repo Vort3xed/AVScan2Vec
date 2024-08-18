@@ -297,11 +297,12 @@ class PretrainEncoder(nn.Module):
         # self.aggregator_activation = nn.LeakyReLU()
         # self.aggregator_norm = nn.LayerNorm(D)
 
-        self.aggregator_sequential = nn.Sequential(
+        self.aggregator_tok = nn.Sequential(
             nn.Linear(D * L, D),
             nn.LeakyReLU(),
             nn.LayerNorm(D)
         )
+
 
         # Define av transformer encoder
         encoderlayer_av_args = {
@@ -313,6 +314,12 @@ class PretrainEncoder(nn.Module):
         encoderlayer_av = nn.TransformerEncoderLayer(**encoderlayer_av_args)
         self.encoder_av = nn.TransformerEncoder(encoderlayer_av, num_layers=tok_layers)
 
+        self.aggregator_av = nn.Sequential(
+            nn.Linear(D * A, D),
+            nn.LeakyReLU(),
+            nn.LayerNorm(D)
+        )
+
 
     def forward(self, X_scan, X_av):
         """Forward pass through AVScan2Vec pretrain model.
@@ -322,15 +329,8 @@ class PretrainEncoder(nn.Module):
         X_scan -- Batch of scan reports (B, A*L)
         X_av -- AVs with labels in batch (B, A)
         """
-
         B = X_scan.size(0)
-
-        X_scan = X_scan.reshape(B, self.A, self.L) # (B, A, L)
-        X_scan = X_scan.reshape(B * self.A, self.L) # (B*A, L)
-
         print(f"X_scan size at pretrain encoder: {X_scan.size()}")
-        B = X_scan.size(0)
-
         X_scan = X_scan.reshape(B, self.A, self.L) # (B, A, L)
         X_scan = X_scan.reshape(B * self.A, self.L) # (B*A, L)
 
@@ -339,12 +339,10 @@ class PretrainEncoder(nn.Module):
         with torch.no_grad():
             token_mask = (X_scan == self.PAD_idx) # (B * A, L)
             print("token mask size:",token_mask.size())
-            token_mask = (X_scan == self.PAD_idx) # (B * A, L)
-            print("token mask size:",token_mask.size())
+
 
         # Apply positional and segment embeddings
         # pass X_scan into the PositionalEmbedding model and get the embeddings
-        X_scan_embd = self.token_embd(X_scan) # (B * A, L, D)
         X_scan_embd = self.token_embd(X_scan) # (B * A, L, D)
 
         # Encode X_scan using token encoder
@@ -353,16 +351,24 @@ class PretrainEncoder(nn.Module):
         X_tok_enc = X_tok_enc.reshape(B * self.A, self.L * self.D) # (B * A, L * D)
 
         # Aggregate X_tok_enc to shape (B, A, D)
-        # X_agg = self.aggregator(X_tok_enc) # (B * A, 1, D)
-        X_agg = self.aggregator_sequential(X_tok_enc) # (B * A, 1, D)
-        print(f"X_agg size: {X_agg.size()}")
+        X_agg_tok = self.aggregator_tok(X_tok_enc) # (B * A, D)
+        print(f"X_agg size: {X_agg_tok.size()}")
 
-        X_agg = X_agg.reshape(B, self.A, self.D) # (B, A, D)
+        X_agg_tok = X_agg_tok.reshape(B, self.A, self.D) # (B, A, D)
 
         with torch.no_grad():
-            av_mask = (X_av == self.NOAV_idx)
+            av_mask = (X_av == self.NO_AV_idx)
+        
+        X_av_enc = self.encoder_av(X_agg_tok, src_key_padding_mask=av_mask) # (B, A, D)
 
-        return X_tok_enc
+        X_av_enc = X_av_enc.reshape(B, self.A * self.D) # (B, A * D)
+
+        # Aggregate X_tok_av to shape (B, D)
+        X_agg_av = self.aggregator_av(X_av_enc) # (B, D)
+
+        print(f"X_agg_av size: {X_agg_av.size()}")
+
+        return X_agg_av
 
 
 class PretrainLoss(nn.Module):
@@ -413,13 +419,30 @@ class PretrainLoss(nn.Module):
         self.register_buffer("X_SOS", _X_SOS) # (A, max_chars)
 
         # Define the LSTM decoder
-        decoder_args = {
-            "input_size": D,
-            "hidden_size": D,
-            "num_layers": tok_layers,
-            "batch_first": True
-        }
-        self.decoder = nn.LSTM(**decoder_args)
+        # decoder_args = {
+        #     "input_size": D,
+        #     "hidden_size": D,
+        #     "num_layers": tok_layers,
+        #     "batch_first": True
+        # }
+        # self.decoder = nn.LSTM(**decoder_args)
+
+        # Define the transformer decoder
+        self.decoder_layer = nn.TransformerDecoderLayer(
+            d_model=D,
+            nhead=8,
+            # dim_feedforward=H,
+            batch_first=True
+        )
+        self.decoder = nn.TransformerDecoder(
+            decoder_layer=self.decoder_layer,
+            num_layers=tok_layers,
+        )
+
+        print(f"Vocab size in pretrain loss: {dataset.vocab_size}")
+        self.linear = nn.Linear(D, self.vocab_size)
+        self.softmax = nn.Softmax(dim=2)
+
 
         # Define token prediction network
         self.predict_token = nn.Sequential(
@@ -445,6 +468,17 @@ class PretrainLoss(nn.Module):
         # self.alswl = AdaptiveLogSoftmaxWithLoss(H, self.vocab_size, cutoffs=[750, 5000, 20000])
         self.alswl = AdaptiveLogSoftmaxWithLoss(H, self.vocab_size, cutoffs=[750, 2500, 6000])
 
+    def generate_square_subsequent_mask(self, sz):
+        """Generate a square mask for the sequence. The masked positions are filled with float('-inf').
+
+        Arguments:
+        sz -- Size of the mask
+        """
+
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
 
     def forward(self, X_scan, X_av, Y_scan, Y_idxs, Y_label, Y_av):
         """Compute masked token prediction and masked label prection loss.
@@ -464,55 +498,74 @@ class PretrainLoss(nn.Module):
 
         print(f"X_scan size at pretrain loss: {X_scan.size()}")
 
-        print(f"X_scan size at pretrain loss: {X_scan.size()}")
-
         # Encode X_scan
-        X_tok_enc = self.encoder(X_scan, X_av)
+        # X_tok_enc = self.encoder(X_scan, X_av)
+        X_vec = self.encoder(X_scan, X_av) # (B, D)
 
-        # Get encoding of CLS token
-        X_vec = X_tok_enc[:, 0, :] # (B, D)
-        print(f"X_vec size in pretrainloss: {X_vec.size()}")
-        print(f"X_vec size in pretrainloss: {X_vec.size()}")
+        y_label_embd = self.encoder.token_embd.token_embd(Y_label) # (B, L, D)
 
-        # Reshape X_tok_enc to (B*A, L, D) (Drop CLS token)
-        # X_tok_sel = X_tok_enc[:, 1:, :]
-        X_tok_sel = X_tok_enc
+        input_mask = self.generate_square_subsequent_mask(Y_label.size(1)).to("cuda:0")
 
-        print(f"X_tok_sel size in pretrainloss: {X_tok_sel.size()}")
+        # reshape X_vec to (B, 1, D)
+        X_vec = X_vec.reshape(B, 1, self.D) # (B, 1, D)
 
-        # X_tok_sel = X_tok_enc[:, 1:, :]
-        X_tok_sel = X_tok_enc
+        # repeat X_vec L times to get decoder input
+        X_vec = X_vec.repeat(1, Y_label.size(1), 1) # (B, L, D)
 
-        print(f"X_tok_sel size in pretrainloss: {X_tok_sel.size()}")
+        print("X_vec size in pretrainloss: ", X_vec.size())
 
-        X_tok_sel = X_tok_sel.reshape(B*self.A, self.L, self.D) # (B*A, L, D)
+        X_label_decoded = self.decoder(tgt=y_label_embd, memory=X_vec, tgt_mask=input_mask, memory_mask=input_mask) # (B, L, D)
 
-        # Select elements from X_scan_enc for prediction
-        Y_idxs = Y_idxs.reshape(B*self.A) # (B*A)
-        X_tok_pred = X_tok_sel[Y_idxs > 0] # (?, L, D)
-        Y_idxs = Y_idxs[Y_idxs > 0] # (?)
-        X_tok_pred = X_tok_pred[torch.arange(Y_idxs.shape[0]), Y_idxs] # (?, D)
 
-        # Get masked token prediction loss
-        pred_token_logits = self.predict_token(X_tok_pred) # (?, D)
-        _, token_loss = self.alswl(pred_token_logits, Y_scan)
+        X_label_decoded = self.linear(X_label_decoded) # (B, L, vocab_size=8192)
+        X_label_decoded = self.softmax(X_label_decoded)
+
+        print("X_label_decoded size in pretrain loss: ", X_label_decoded.size())
+
+
+        # # Get encoding of CLS token
+        # X_vec = X_tok_enc[:, 0, :] # (B, D)
+        # print(f"X_vec size in pretrainloss: {X_vec.size()}")
+
+        # # Reshape X_tok_enc to (B*A, L, D) (Drop CLS token)
+        # # X_tok_sel = X_tok_enc[:, 1:, :]
+        # X_tok_sel = X_tok_enc
+
+        # print(f"X_tok_sel size in pretrainloss: {X_tok_sel.size()}")
+
+        # # X_tok_sel = X_tok_enc[:, 1:, :]
+        # X_tok_sel = X_tok_enc
+
+        # print(f"X_tok_sel size in pretrainloss: {X_tok_sel.size()}")
+
+        # X_tok_sel = X_tok_sel.reshape(B*self.A, self.L, self.D) # (B*A, L, D)
+
+        # # Select elements from X_scan_enc for prediction
+        # Y_idxs = Y_idxs.reshape(B*self.A) # (B*A)
+        # X_tok_pred = X_tok_sel[Y_idxs > 0] # (?, L, D)
+        # Y_idxs = Y_idxs[Y_idxs > 0] # (?)
+        # X_tok_pred = X_tok_pred[torch.arange(Y_idxs.shape[0]), Y_idxs] # (?, D)
+
+        # # Get masked token prediction loss
+        # pred_token_logits = self.predict_token(X_tok_pred) # (?, D)
+        # _, token_loss = self.alswl(pred_token_logits, Y_scan)
 
         # Repeat X_scan_vec n_layers times to get decoder hidden state
-        h_decoder = self.h_init(X_vec) # (B, D*tok_layers)
-        print(f"h_decoder size: {h_decoder.size()}") # (B*A, D*tok_layers)
-        print(f"tok_layers: {self.tok_layers}")
-        # exit(0)
+        # h_decoder = self.h_init(X_vec) # (B, D*tok_layers)
+        # print(f"h_decoder size: {h_decoder.size()}") # (B*A, D*tok_layers)
+        # print(f"tok_layers: {self.tok_layers}")
+        # # exit(0)
         
-        print(f"h_decoder size: {h_decoder.size()}") # (B*A, D*tok_layers)
-        print(f"tok_layers: {self.tok_layers}")
-        # exit(0)
+        # print(f"h_decoder size: {h_decoder.size()}") # (B*A, D*tok_layers)
+        # print(f"tok_layers: {self.tok_layers}")
+        # # exit(0)
         
-        h_decoder = h_decoder.reshape(B, self.D, self.tok_layers)
-        h_decoder = h_decoder.permute(2, 0, 1).contiguous() # (tok_layers, B, D)
+        # h_decoder = h_decoder.reshape(B, self.D, self.tok_layers)
+        # h_decoder = h_decoder.permute(2, 0, 1).contiguous() # (tok_layers, B, D)
 
-        # Repeat c_init B times to get decoder cell state
-        with torch.no_grad():
-            c_decoder = self.c_init.repeat(1, B, 1) # (tok_layers, B, D)
+        # # Repeat c_init B times to get decoder cell state
+        # with torch.no_grad():
+        #     c_decoder = self.c_init.repeat(1, B, 1) # (tok_layers, B, D)
 
         # Embed the <SOS> token as the first input to the decoder
         with torch.no_grad():
@@ -524,7 +577,6 @@ class PretrainLoss(nn.Module):
             X_decoder = self.encoder.token_embd.layer_norm(X_decoder)
 
             # added sum here (remove)
-            # i have no clue what im doing THIS IS DEFINITELY WRONG. this is just some random crap i did to force x_decoder to be the right shape
             # X_decoder = X_decoder.sum(2)[:, 0:1, :]
 
             # print(f"X_decoder size: {X_decoder.size()}")
