@@ -466,7 +466,7 @@ class PretrainLoss(nn.Module):
 
         # Adaptive softmax with loss
         # self.alswl = AdaptiveLogSoftmaxWithLoss(H, self.vocab_size, cutoffs=[750, 5000, 20000])
-        self.alswl = AdaptiveLogSoftmaxWithLoss(H, self.vocab_size, cutoffs=[750, 2500, 6000])
+        # self.alswl = AdaptiveLogSoftmaxWithLoss(H, self.vocab_size, cutoffs=[750, 2500, 6000])
 
     def generate_square_subsequent_mask(self, sz):
         """Generate a square mask for the sequence. The masked positions are filled with float('-inf').
@@ -479,6 +479,25 @@ class PretrainLoss(nn.Module):
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
+    def CrossEntropyLossTime(self, Y_hat, Y, padding_idx=0):
+
+        # padding_idx = 1
+        
+        cel = nn.CrossEntropyLoss(ignore_index=padding_idx)
+        T = min(Y_hat.size(1), Y.size(1))
+        loss = 0.0
+        for t in range(T):
+            loss += cel(Y_hat[:,t,:], Y[:,t])
+
+            torch.set_printoptions(profile="full")
+
+            print("y_hat: ", Y_hat[:,t,:])
+            print(loss)
+            if (torch.any(torch.isnan(loss))):
+                exit(0)
+
+
+        return loss
 
     def forward(self, X_scan, X_av, Y_scan, Y_idxs, Y_label, Y_av):
         """Compute masked token prediction and masked label prection loss.
@@ -516,11 +535,18 @@ class PretrainLoss(nn.Module):
 
         X_label_decoded = self.decoder(tgt=y_label_embd, memory=X_vec, tgt_mask=input_mask, memory_mask=input_mask) # (B, L, D)
 
-
         X_label_decoded = self.linear(X_label_decoded) # (B, L, vocab_size=8192)
-        X_label_decoded = self.softmax(X_label_decoded)
+        # X_label_decoded = self.softmax(X_label_decoded) # (B, L, vocab_size=8192)
 
         print("X_label_decoded size in pretrain loss: ", X_label_decoded.size())
+
+        # run loss function given X_label_decoded and Y_scan here
+        label_loss = self.CrossEntropyLossTime(X_label_decoded, Y_label)
+
+        print("label loss: ", label_loss.item())
+
+        token_loss = torch.zeros(1).to("cuda:0")
+
 
 
         # # Get encoding of CLS token
@@ -568,66 +594,66 @@ class PretrainLoss(nn.Module):
         #     c_decoder = self.c_init.repeat(1, B, 1) # (tok_layers, B, D)
 
         # Embed the <SOS> token as the first input to the decoder
-        with torch.no_grad():
-            Y_pos = Y_av * self.L
-            X_SOS_tok = self.X_SOS[Y_av] # (B, max_chars)
-            X_decoder = self.encoder.token_embd.token_embd(X_SOS_tok) # (B, D)
-            X_decoder = X_decoder + self.encoder.token_embd.av_embd(Y_av+1)
-            X_decoder = X_decoder + self.encoder.token_embd.pos_embd(Y_pos+1)
-            X_decoder = self.encoder.token_embd.layer_norm(X_decoder)
+        # with torch.no_grad():
+        #     Y_pos = Y_av * self.L
+        #     X_SOS_tok = self.X_SOS[Y_av] # (B, max_chars)
+        #     X_decoder = self.encoder.token_embd.token_embd(X_SOS_tok) # (B, D)
+        #     X_decoder = X_decoder + self.encoder.token_embd.av_embd(Y_av+1)
+        #     X_decoder = X_decoder + self.encoder.token_embd.pos_embd(Y_pos+1)
+        #     X_decoder = self.encoder.token_embd.layer_norm(X_decoder)
 
-            # added sum here (remove)
-            # X_decoder = X_decoder.sum(2)[:, 0:1, :]
+        #     # added sum here (remove)
+        #     # X_decoder = X_decoder.sum(2)[:, 0:1, :]
 
-            # print(f"X_decoder size: {X_decoder.size()}")
+        #     # print(f"X_decoder size: {X_decoder.size()}")
 
-            X_decoder = X_decoder.reshape(B, 1, self.D) # (B, 1, D)
+        #     X_decoder = X_decoder.reshape(B, 1, self.D) # (B, 1, D)
             
 
         # Determine whether to use teacher forcing (50% when training)
-        teacher_forcing = False
-        if self.training:
-            teacher_forcing = np.random.choice((True, False))
+        # teacher_forcing = False
+        # if self.training:
+        #     teacher_forcing = np.random.choice((True, False))
 
-        # Iterate over each timestep
-        pred_tokens = None
-        pred_labels = []
-        label_loss = 0.0
-        for t in range(self.L):
+        # # Iterate over each timestep
+        # pred_tokens = None
+        # pred_labels = []
+        # label_loss = 0.0
+        # for t in range(self.L):
 
-            # Get output for decoder at current timestep
-            decoder_out, (h_decoder, c_decoder) = self.decoder(X_decoder, (h_decoder, c_decoder))
-            # print(f"decoder_out size: {decoder_out.size()}")
-            # i have no clue what im doing THIS IS DEFINITELY WRONG. this is just some random crap i did to force x_decoder to be the right shape
-            # decoder_out = decoder_out[:, 0:1, :].reshape(B, self.D)
-            decoder_out = decoder_out.reshape(B, self.D)
+        #     # Get output for decoder at current timestep
+        #     decoder_out, (h_decoder, c_decoder) = self.decoder(X_decoder, (h_decoder, c_decoder))
+        #     # print(f"decoder_out size: {decoder_out.size()}")
+        #     # i have no clue what im doing THIS IS DEFINITELY WRONG. this is just some random crap i did to force x_decoder to be the right shape
+        #     # decoder_out = decoder_out[:, 0:1, :].reshape(B, self.D)
+        #     decoder_out = decoder_out.reshape(B, self.D)
 
-            # Predict token to use as decoder's next input
-            pred_label_logits = self.predict_label(decoder_out)
-            with torch.no_grad():
-                if teacher_forcing:
-                    X_next = Y_label[:, t]
-                else:
-                    X_next = self.alswl.predict(pred_label_logits)
-                if not self.training:
-                    pred_labels.append(X_next)
+        #     # Predict token to use as decoder's next input
+        #     pred_label_logits = self.predict_label(decoder_out)
+        #     with torch.no_grad():
+        #         if teacher_forcing:
+        #             X_next = Y_label[:, t]
+        #         else:
+        #             X_next = self.alswl.predict(pred_label_logits)
+        #         if not self.training:
+        #             pred_labels.append(X_next)
 
-            # Embed predicted token
-            if t+1 < self.L:
-                X_next_tok = torch.stack([self.dataset.tok_to_tensor(self.dataset.token_vocab_rev[tok.item()]) for tok in X_next])
-                X_next_tok = X_next_tok.to(next(self.parameters()).device)
-                X_decoder = self.encoder.token_embd.token_embd(X_next_tok).reshape(B, -1, self.D) # (B, 1, D)
+        #     # Embed predicted token
+        #     if t+1 < self.L:
+        #         X_next_tok = torch.stack([self.dataset.tok_to_tensor(self.dataset.token_vocab_rev[tok.item()]) for tok in X_next])
+        #         X_next_tok = X_next_tok.to(next(self.parameters()).device)
+        #         X_decoder = self.encoder.token_embd.token_embd(X_next_tok).reshape(B, -1, self.D) # (B, 1, D)
 
-            # Get timestep loss
-            _, timestep_loss = self.alswl(pred_label_logits, Y_label[:, t])
-            label_loss = label_loss + timestep_loss
+        #     # Get timestep loss
+        #     _, timestep_loss = self.alswl(pred_label_logits, Y_label[:, t])
+        #     label_loss = label_loss + timestep_loss
 
-        # Predict tokens/labels if evaluating model
-        if not self.training:
-            with torch.no_grad():
-                pred_tokens = self.alswl.predict(pred_token_logits)
-                pred_labels = torch.stack(pred_labels, dim=1)
-            return token_loss, label_loss, pred_tokens, pred_labels
+        # # Predict tokens/labels if evaluating model
+        # if not self.training:
+        #     with torch.no_grad():
+        #         pred_tokens = self.alswl.predict(pred_token_logits)
+        #         pred_labels = torch.stack(pred_labels, dim=1)
+        #     return token_loss, label_loss, pred_tokens, pred_labels
 
         return token_loss, label_loss, None, None
 
