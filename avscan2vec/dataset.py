@@ -206,15 +206,6 @@ class AVScanDataset(Dataset):
         else:
             return input_list  # Return the whole list if "<EOS>" is not found
         
-
-    #X_scan is a 1d array :(
-    
-    def extract(self, input_list):
-        if "<EOS>" in input_list:
-            eos_index = input_list.index("<EOS>")
-            return input_list[:eos_index]
-        else:
-            return input_list  # Return the whole list if "<EOS>" is not found
         
 
     #X_scan is a 1d array :(
@@ -246,12 +237,6 @@ class AVScanDataset(Dataset):
         # X_tok = torch.LongTensor(next(self.encoder.transform(tok)))
         #should convert ['ge', 'ne', 'ri', 'c'] into like [23, 53, 65, 21] (which is a longTensor)
         #transform the token and remove the __SOW and __EOW
-        X_tok = next(self.encoder.transform([tok]))[1:-1]
-    
-        # X_tok = X_tok[:self.max_chars]
-        #padding
-        # X_tok += [0]*(self.max_chars-len(X_tok))
-        X_tok = torch.LongTensor(X_tok)
         #transform the token and remove the __SOW and __EOW
         X_tok = next(self.encoder.transform([tok]))[1:-1]
     
@@ -350,14 +335,14 @@ class AVScanDataset(Dataset):
 
         # Convert X_scan to tensor of characters
         X_scan_bpe = self.tok_to_tensor(CLS).reshape(1, -1) # (1, max_chars)
-        X_scan_bpe = self.tok_to_tensor(CLS).reshape(1, -1) # (1, max_chars)
+        # X_scan_bpe = self.tok_to_tensor(CLS).reshape(1, -1) # (1, max_chars)
         for tok in X_scan:
             # X_scan_char = np.concatenate((X_scan_char, torch.LongTensor(next(self.encoder.transform(tok))).reshape(1, -1)))
             # print(X_scan)
             X_scan_bpe = np.concatenate((X_scan_bpe, self.tok_to_tensor(tok).reshape(1, -1)))
             #should have the transformed label from every antivirus scanner?
             # print(X_scan)
-            X_scan_bpe = np.concatenate((X_scan_bpe, self.tok_to_tensor(tok).reshape(1, -1)))
+            # X_scan_bpe = np.concatenate((X_scan_bpe, self.tok_to_tensor(tok).reshape(1, -1)))
             #should have the transformed label from every antivirus scanner?
 
         # print(X_scan_char.shape)
@@ -365,14 +350,6 @@ class AVScanDataset(Dataset):
         # sys.stdout.flush()
 
         # Construct X_av from list of AVs in report
-        X_scan = torch.as_tensor(X_scan_bpe)
-        
-        # X_SCAN:
-        # [<SOS_av>, mal, ware, w, in, 32, <EOS>, <PAD>, <PAD>, <PAD>, <PAD>,
-        # <SOS_av>, mal, ware, w, in, 32, <EOS>, <PAD>, <PAD>, <PAD>, <PAD>,
-        # <SOS_av>, mal, ware, w, in, 32, <EOS>, <PAD>, <PAD>, <PAD>, <PAD>]
-
-
         X_scan = torch.as_tensor(X_scan_bpe)
         
         # X_SCAN:
@@ -680,7 +657,6 @@ class PretrainDataset(AVScanDataset):
         for i, tok in enumerate(X_scan):
             if tok in pred_tokens:
                 if rand_nums[i] < 80:
-                    X_scan[i] = self.tok_to_tensor(MASK)
                     X_scan[i] = self.tok_to_tensor(MASK)
                 elif rand_nums[i] < 90:
                     #TO-DO REPLACE WITH RANDOM BPE TOKEN NUMBER

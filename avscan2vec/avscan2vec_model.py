@@ -161,23 +161,23 @@ class PositionalEmbedding(nn.Module):
         av_reshaped = avs.view(B * self.A, -1)
         pos_reshaped = pos.view(B * self.A, -1)
 
-        print(f"X_scan size: {X_scan.size()}")
-        print(f"av_reshaped size: {av_reshaped.size()}")
-        print(f"pos_reshaped size: {pos_reshaped.size()}")
+        # print(f"X_scan size: {X_scan.size()}")
+        # print(f"av_reshaped size: {av_reshaped.size()}")
+        # print(f"pos_reshaped size: {pos_reshaped.size()}")
 
-        print(self.vocab_size)
-        print(torch.max(X_scan))
+        # print(self.vocab_size)
+        # print(torch.max(X_scan))
         # exit(0)
         # X_scan_reshaped = X_scan.view(B * self.A, -1)
         av_reshaped = avs.view(B * self.A, -1)
         pos_reshaped = pos.view(B * self.A, -1)
 
-        print(f"X_scan size: {X_scan.size()}")
-        print(f"av_reshaped size: {av_reshaped.size()}")
-        print(f"pos_reshaped size: {pos_reshaped.size()}")
+        # print(f"X_scan size: {X_scan.size()}")
+        # print(f"av_reshaped size: {av_reshaped.size()}")
+        # print(f"pos_reshaped size: {pos_reshaped.size()}")
 
-        print(self.vocab_size)
-        print(torch.max(X_scan))
+        # print(self.vocab_size)
+        # print(torch.max(X_scan))
         # exit(0)
 
         # X_scan_embd = self.token_embd(X_scan.view(-1, 20)) # (B * A, L, D)
@@ -189,18 +189,16 @@ class PositionalEmbedding(nn.Module):
         pos_embd = self.pos_embd(pos_reshaped)
 
         # Embed token
-        print(f"X_scan size (post embd): {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
-        print(f"avs size (post embd): {av_embd.size()}") # (B, A*L+1, D)
-        print(f"pos size (post embd): {pos_embd.size()}") # (B, A*L+1, D)
-        print(f"X_scan size (post embd): {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
-        print(f"avs size (post embd): {av_embd.size()}") # (B, A*L+1, D)
-        print(f"pos size (post embd): {pos_embd.size()}") # (B, A*L+1, D)
+        # print(f"X_scan size (post embd): {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
+        # print(f"avs size (post embd): {av_embd.size()}") # (B, A*L+1, D)
+        # print(f"pos size (post embd): {pos_embd.size()}") # (B, A*L+1, D)
+        # print(f"X_scan size (post embd): {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
+        # print(f"avs size (post embd): {av_embd.size()}") # (B, A*L+1, D)
+        # print(f"pos size (post embd): {pos_embd.size()}") # (B, A*L+1, D)
 
         token_embd = X_scan_embd + av_embd + pos_embd
         token_embd = self.layer_norm(token_embd)
-        print(f"token_embd size: {token_embd.size()}") # (B, A*L+1, D)
-        # exit(0)
-        print(f"token_embd size: {token_embd.size()}") # (B, A*L+1, D)
+        # print(f"token_embd size: {token_embd.size()}") # (B, A*L+1, D)
         # exit(0)
         return token_embd
 
@@ -330,15 +328,15 @@ class PretrainEncoder(nn.Module):
         X_av -- AVs with labels in batch (B, A)
         """
         B = X_scan.size(0)
-        print(f"X_scan size at pretrain encoder: {X_scan.size()}")
+        # print(f"X_scan size at pretrain encoder: {X_scan.size()}")
         X_scan = X_scan.reshape(B, self.A, self.L) # (B, A, L)
         X_scan = X_scan.reshape(B * self.A, self.L) # (B*A, L)
 
-        print(f"X_scan size at pretrain encoder: {X_scan.size()}")
+        # print(f"X_scan size at pretrain encoder: {X_scan.size()}")
         # Get mask indicating <PAD> tokens in X_scan
         with torch.no_grad():
             token_mask = (X_scan == self.PAD_idx) # (B * A, L)
-            print("token mask size:",token_mask.size())
+            # print("token mask size:",token_mask.size())
 
 
         # Apply positional and segment embeddings
@@ -352,7 +350,7 @@ class PretrainEncoder(nn.Module):
 
         # Aggregate X_tok_enc to shape (B, A, D)
         X_agg_tok = self.aggregator_tok(X_tok_enc) # (B * A, D)
-        print(f"X_agg size: {X_agg_tok.size()}")
+        # print(f"X_agg size: {X_agg_tok.size()}")
 
         X_agg_tok = X_agg_tok.reshape(B, self.A, self.D) # (B, A, D)
 
@@ -366,7 +364,7 @@ class PretrainEncoder(nn.Module):
         # Aggregate X_tok_av to shape (B, D)
         X_agg_av = self.aggregator_av(X_av_enc) # (B, D)
 
-        print(f"X_agg_av size: {X_agg_av.size()}")
+        # print(f"X_agg_av size: {X_agg_av.size()}")
 
         return X_agg_av
 
@@ -487,15 +485,18 @@ class PretrainLoss(nn.Module):
         T = min(Y_hat.size(1), Y.size(1))
         loss = 0.0
         for t in range(T):
+
+            if (torch.all(Y[:,t] == padding_idx)):
+                continue
+
             loss += cel(Y_hat[:,t,:], Y[:,t])
 
-            torch.set_printoptions(profile="full")
+            # torch.set_printoptions(profile="full")
 
-            print("y_hat: ", Y_hat[:,t,:])
-            print(loss)
-            if (torch.any(torch.isnan(loss))):
-                exit(0)
-
+            # print("y_hat: ", Y_hat[:,t,:])
+            # print(loss)
+            # if (torch.any(torch.isnan(loss))):
+            #     exit(0)
 
         return loss
 
@@ -515,7 +516,7 @@ class PretrainLoss(nn.Module):
         # Get batch size
         B = X_scan.shape[0]
 
-        print(f"X_scan size at pretrain loss: {X_scan.size()}")
+        # print(f"X_scan size at pretrain loss: {X_scan.size()}")
 
         # Encode X_scan
         # X_tok_enc = self.encoder(X_scan, X_av)
@@ -531,14 +532,14 @@ class PretrainLoss(nn.Module):
         # repeat X_vec L times to get decoder input
         X_vec = X_vec.repeat(1, Y_label.size(1), 1) # (B, L, D)
 
-        print("X_vec size in pretrainloss: ", X_vec.size())
+        # print("X_vec size in pretrainloss: ", X_vec.size())
 
         X_label_decoded = self.decoder(tgt=y_label_embd, memory=X_vec, tgt_mask=input_mask, memory_mask=input_mask) # (B, L, D)
 
         X_label_decoded = self.linear(X_label_decoded) # (B, L, vocab_size=8192)
         # X_label_decoded = self.softmax(X_label_decoded) # (B, L, vocab_size=8192)
 
-        print("X_label_decoded size in pretrain loss: ", X_label_decoded.size())
+        # print("X_label_decoded size in pretrain loss: ", X_label_decoded.size())
 
         # run loss function given X_label_decoded and Y_scan here
         label_loss = self.CrossEntropyLossTime(X_label_decoded, Y_label)

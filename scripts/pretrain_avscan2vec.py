@@ -11,6 +11,7 @@ from collections import OrderedDict
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, Subset
+import re
 
 sys.path.insert(0, "/home/agneya/AVScan2Vec/avscan2vec/")
 from globalvars import *
@@ -50,6 +51,11 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
             optimizer.zero_grad()
             token_loss, label_loss, _, _ = model(X_scan, X_av, Y_scan, Y_idxs, Y_label, Y_av)
 
+            # print(batches)
+            # if batches > 3:
+            #     print("kill pretrain on line 54")
+            #     exit(0)
+
             # Get batch size
             B_token = Y_scan.shape[0]
             B_label = Y_label.shape[0]
@@ -86,7 +92,8 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
                 if rank == 0:
                     checkpoint_file_part = checkpoint_file + "part"
                     torch.save({
-                        "model_state_dict": model.module.state_dict(),
+                        # "model_state_dict": model.module.state_dict(),
+                        "model_state_dict": model.state_dict(),
                         "optimizer_state_dict": optimizer.state_dict(),
                         "scheduler_state_dict": scheduler.state_dict(),
                     }, checkpoint_file_part)
@@ -94,7 +101,8 @@ def train_network(model, optimizer, scheduler, train_loader, epochs, checkpoint_
 
         # Save model statistics at end of epoch
         torch.save({
-            "model_state_dict": model.module.state_dict(),
+            # "model_state_dict": model.module.state_dict(),
+            "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
         }, checkpoint_file)
@@ -252,6 +260,7 @@ if __name__ == "__main__":
         nprocs=len(args.devices)
     )
     """
+
     print("done")
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
@@ -265,12 +274,13 @@ if __name__ == "__main__":
         print("Loading model from {}".format(args.checkpoint_file))
         sys.stdout.flush()
         save_info = torch.load(args.checkpoint_file, map_location="cuda")
-        """
-        state_dict = OrderedDict()
-        for k, v in save_info["model_state_dict"].items():
-            new_k = re.sub(r"module.", "", k)
-            state_dict[new_k] = v
-        """
+        
+
+        # state_dict = OrderedDict()
+        # for k, v in save_info["model_state_dict"].items():
+        #     new_k = re.sub(r"module.", "", k)
+        #     state_dict[new_k] = v
+        
         pretrain_model.load_state_dict(state_dict)
 
     # Move model to GPU
