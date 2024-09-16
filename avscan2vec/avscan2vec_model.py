@@ -58,7 +58,6 @@ class PositionalEmbedding(nn.Module):
         """
 
         # A: 89, L: 35, D: 768, vocab_size: 200000, PAD_idx: 0
-        # A: 89, L: 35, D: 768, vocab_size: 200000, PAD_idx: 0
 
         # super(PositionalEmbedding, self).__init__()
         # self.token_embd = BPEEmbedding(D, vocab_size, PAD_idx)
@@ -92,24 +91,8 @@ class PositionalEmbedding(nn.Module):
         # avs = avs.repeat(L)[L-1:].reshape(1, -1) # (1, A*L+1)
         #why do we splice out the first L-1 elements?
 
-        positions = torch.arange(L, dtype=torch.long).reshape(1, L) # (1, L)
-        positions = positions.repeat(A, 1).reshape(1, -1) # (1, A*L)
-        # avs = torch.arange(A*L, dtype=torch.long).reshape(1, -1) # (1, A*L)
-
-        avs = torch.arange(A, dtype=torch.long).reshape(A, 1) # (A)
-        avs = avs.repeat(1, L).reshape(1, -1) # (1, A*L)
-
-        # positions = torch.arange(A*L+1, dtype=torch.long).reshape(1, -1) # (1, A*L+1)
-        # avs = torch.arange(A+1, dtype=torch.long) # (A+1)
-        # avs = avs.repeat(L)[L-1:].reshape(1, -1) # (1, A*L+1)
-        #why do we splice out the first L-1 elements?
-
         self.register_buffer("positions", positions)
         self.register_buffer("avs", avs)
-
-        self.A = A
-        self.L = L
-        self.vocab_size = vocab_size
 
         self.A = A
         self.L = L
@@ -151,7 +134,6 @@ class PositionalEmbedding(nn.Module):
 
         # Get batch size
         B = X_scan.shape[0]//self.A
-        B = X_scan.shape[0]//self.A
 
         # Repeat positions and avs B times
         pos = self.positions.repeat(B, 1)
@@ -169,29 +151,13 @@ class PositionalEmbedding(nn.Module):
         # print(torch.max(X_scan))
         # exit(0)
         # X_scan_reshaped = X_scan.view(B * self.A, -1)
-        av_reshaped = avs.view(B * self.A, -1)
-        pos_reshaped = pos.view(B * self.A, -1)
-
-        # print(f"X_scan size: {X_scan.size()}")
-        # print(f"av_reshaped size: {av_reshaped.size()}")
-        # print(f"pos_reshaped size: {pos_reshaped.size()}")
-
-        # print(self.vocab_size)
-        # print(torch.max(X_scan))
-        # exit(0)
-
-        # X_scan_embd = self.token_embd(X_scan.view(-1, 20)) # (B * A, L, D)
+    
         X_scan_embd = self.token_embd(X_scan) 
         av_embd = self.av_embd(av_reshaped)
         pos_embd = self.pos_embd(pos_reshaped)
-        X_scan_embd = self.token_embd(X_scan) 
-        av_embd = self.av_embd(av_reshaped)
-        pos_embd = self.pos_embd(pos_reshaped)
+
 
         # Embed token
-        # print(f"X_scan size (post embd): {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
-        # print(f"avs size (post embd): {av_embd.size()}") # (B, A*L+1, D)
-        # print(f"pos size (post embd): {pos_embd.size()}") # (B, A*L+1, D)
         # print(f"X_scan size (post embd): {X_scan_embd.size()}") # (B, A*L+1, max_chars, D)
         # print(f"avs size (post embd): {av_embd.size()}") # (B, A*L+1, D)
         # print(f"pos size (post embd): {pos_embd.size()}") # (B, A*L+1, D)
@@ -290,11 +256,6 @@ class PretrainEncoder(nn.Module):
         encoderlayer_tok = nn.TransformerEncoderLayer(**encoderlayer_tok_args)
         self.encoder_tok = nn.TransformerEncoder(encoderlayer_tok, num_layers=tok_layers)
 
-        # do this with nn.sequential
-        # self.aggregator = nn.Linear(D * L, D)
-        # self.aggregator_activation = nn.LeakyReLU()
-        # self.aggregator_norm = nn.LayerNorm(D)
-
         self.aggregator_tok = nn.Sequential(
             nn.Linear(D * L, D),
             nn.LeakyReLU(),
@@ -327,16 +288,14 @@ class PretrainEncoder(nn.Module):
         X_scan -- Batch of scan reports (B, A*L)
         X_av -- AVs with labels in batch (B, A)
         """
+        
         B = X_scan.size(0)
-        # print(f"X_scan size at pretrain encoder: {X_scan.size()}")
         X_scan = X_scan.reshape(B, self.A, self.L) # (B, A, L)
         X_scan = X_scan.reshape(B * self.A, self.L) # (B*A, L)
 
-        # print(f"X_scan size at pretrain encoder: {X_scan.size()}")
         # Get mask indicating <PAD> tokens in X_scan
         with torch.no_grad():
             token_mask = (X_scan == self.PAD_idx) # (B * A, L)
-            # print("token mask size:",token_mask.size())
 
 
         # Apply positional and segment embeddings
@@ -371,7 +330,8 @@ class PretrainEncoder(nn.Module):
 
 class PretrainLoss(nn.Module):
     def __init__(self, A, L, D, H, tok_layers, encoder, dataset):
-        """Compute loss for Masked Token Prediction and Masked Label Prediction.
+        """
+        Compute loss for Masked Token Prediction and Masked Label Prediction.
 
         Arguments:
         A -- The number of AV products
@@ -415,16 +375,7 @@ class PretrainLoss(nn.Module):
         
         _X_SOS = torch.cat([self.dataset.tok_to_tensor(tok) for tok in dataset.SOS_toks]).reshape(A, -1) # (A, max_chars)        
         self.register_buffer("X_SOS", _X_SOS) # (A, max_chars)
-
-        # Define the LSTM decoder
-        # decoder_args = {
-        #     "input_size": D,
-        #     "hidden_size": D,
-        #     "num_layers": tok_layers,
-        #     "batch_first": True
-        # }
-        # self.decoder = nn.LSTM(**decoder_args)
-
+        
         # Define the transformer decoder
         self.decoder_layer = nn.TransformerDecoderLayer(
             d_model=D,
